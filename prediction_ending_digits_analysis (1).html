@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prediction Ending-Digits Analysis</title>
+<style>
+  :root{
+    color-scheme: light;
+    --page:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f2ef;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --series:#2a78d6; --series-soft:#9ec5f4; --accent:#eb6834;
+    --good:#0ca30c; --critical:#d03b3b; --warning:#eda100;
+    --shade-hi:rgba(42,120,214,0.06); --shade-lo:rgba(235,104,52,0.06);
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+    --series:#3987e5; --series-soft:#184f95; --accent:#d95926;
+    --good:#0ca30c; --critical:#e66767; --warning:#c98500;
+    --shade-hi:rgba(57,135,229,0.10); --shade-lo:rgba(217,89,38,0.10);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+      --series:#3987e5; --series-soft:#184f95; --accent:#d95926;
+      --critical:#e66767; --warning:#c98500;
+      --shade-hi:rgba(57,135,229,0.10); --shade-lo:rgba(217,89,38,0.10);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page); color:var(--text-primary);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:40px 24px 80px}
+  header.top{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap}
+  h1{font-size:1.9rem; line-height:1.15; margin:0 0 6px; letter-spacing:-0.01em}
+  .sub{color:var(--text-secondary); margin:0; font-size:1.02rem; max-width:62ch}
+  h2{font-size:1.25rem; margin:44px 0 4px; letter-spacing:-0.01em}
+  h2 + .lead{color:var(--text-secondary); margin:0 0 18px; max-width:70ch}
+  p{color:var(--text-secondary)}
+  p.body{max-width:72ch}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px 22px}
+  .toggle{border:1px solid var(--border); background:var(--surface); color:var(--text-secondary);
+    border-radius:999px; padding:7px 14px; font-size:.82rem; cursor:pointer; white-space:nowrap}
+  .toggle:hover{color:var(--text-primary)}
+
+  /* verdict */
+  .verdict{margin-top:22px; border-left:4px solid var(--accent); background:var(--surface);
+    border-radius:12px; padding:18px 22px; border-top:1px solid var(--border);
+    border-right:1px solid var(--border); border-bottom:1px solid var(--border)}
+  .verdict .tag{display:inline-flex; align-items:center; gap:7px; font-size:.72rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em; color:var(--accent); margin-bottom:6px}
+  .verdict h3{margin:0 0 8px; font-size:1.15rem; color:var(--text-primary)}
+  .verdict p{margin:0; color:var(--text-secondary); max-width:78ch}
+  .verdict strong{color:var(--text-primary)}
+
+  /* stat tiles */
+  .tiles{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:26px}
+  .tile{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px}
+  .tile .v{font-size:2.05rem; font-weight:650; letter-spacing:-0.02em; line-height:1}
+  .tile .l{color:var(--text-secondary); font-size:.86rem; margin-top:7px}
+  .tile .h{color:var(--muted); font-size:.76rem; margin-top:3px}
+  @media(max-width:720px){ .tiles{grid-template-columns:repeat(2,1fr)} }
+
+  .figure{margin-top:18px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 20px 12px}
+  .figure .cap{font-size:.82rem; color:var(--muted); margin:6px 2px 0}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; font-size:.82rem; color:var(--text-secondary); margin:2px 2px 10px}
+  .legend .k{display:inline-flex; align-items:center; gap:7px}
+  .sw{width:12px; height:12px; border-radius:3px; display:inline-block}
+  .sw.line{width:16px; height:0; border-top:2px dashed var(--muted); border-radius:0}
+  svg{display:block; width:100%; height:auto; overflow:visible}
+  .axis text{fill:var(--muted); font-size:11px}
+  .axis-title{fill:var(--text-secondary); font-size:12px}
+  .bar{fill:var(--series)}
+  .bar.hot{fill:var(--accent)}
+  .gridline{stroke:var(--grid); stroke-width:1}
+  .refline{stroke:var(--muted); stroke-width:1.5; stroke-dasharray:5 4}
+
+  /* tooltip */
+  .tt{position:fixed; pointer-events:none; z-index:20; background:var(--surface); color:var(--text-primary);
+    border:1px solid var(--border); border-radius:9px; padding:8px 11px; font-size:.82rem;
+    box-shadow:0 6px 22px rgba(0,0,0,.16); opacity:0; transition:opacity .08s; max-width:240px}
+  .tt b{font-weight:650}
+  .tt .m{color:var(--text-secondary)}
+
+  /* ranked list */
+  .ranked{margin-top:16px; display:grid; gap:7px}
+  .row{display:grid; grid-template-columns:64px 1fr 92px; align-items:center; gap:12px}
+  .row .num{font-variant-numeric:tabular-nums; font-weight:650; text-align:right; font-size:.95rem}
+  .row .track{position:relative; height:22px; background:var(--surface-2); border-radius:5px; overflow:hidden}
+  .row .fill{position:absolute; left:0; top:0; bottom:0; background:var(--series); border-radius:5px}
+  .row .fill.round{background:var(--accent)}
+  .row .fill.rep{background:var(--series)}
+  .row .meta{font-size:.8rem; color:var(--text-secondary); text-align:left; font-variant-numeric:tabular-nums}
+  .row .meta .cat{color:var(--muted)}
+
+  .structure{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:16px}
+  @media(max-width:720px){ .structure{grid-template-columns:1fr} }
+  .srow{background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:13px 15px}
+  .srow .top{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  .srow .name{font-size:.9rem; color:var(--text-primary)}
+  .srow .obs{font-weight:650; font-size:1.05rem}
+  .srow .exp{font-size:.78rem; color:var(--muted)}
+  .srow .minibar{height:6px; background:var(--surface-2); border-radius:4px; margin-top:9px; position:relative; overflow:hidden}
+  .srow .minibar .o{position:absolute; left:0; top:0; bottom:0; background:var(--series); border-radius:4px}
+  .srow .minibar .e{position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--muted)}
+
+  .notes{margin-top:14px; color:var(--text-secondary); font-size:.92rem; max-width:80ch}
+  .notes ul{padding-left:18px; margin:8px 0}
+  .notes li{margin:5px 0}
+  code{background:var(--surface-2); padding:1px 6px; border-radius:5px; font-size:.86em}
+  footer{margin-top:44px; color:var(--muted); font-size:.82rem; border-top:1px solid var(--border); padding-top:16px}
+  .hl-hi{color:var(--series)} .hl-lo{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Do predictors round toward the top of the thousand?</h1>
+      <p class="sub">Distribution of the <strong>last three digits</strong> of every user prediction, pooled across all tracked hunts. Testing the idea that guesses cluster high — like&nbsp;$xx,<b>890</b> / $xx,<b>960</b> — rather than low.</p>
+    </div>
+    <button class="toggle" id="themeBtn" aria-label="Toggle dark mode">◐ Theme</button>
+  </header>
+
+  <div class="verdict">
+    <span class="tag">● Verdict — hypothesis not supported</span>
+    <h3>The endings tilt slightly <em>low</em>, not high — and the real driver is round & "fun" numbers.</h3>
+    <p>Across <strong>20,045 predictions</strong>, the mean ending is <strong>480.6</strong> (a flat, random distribution would sit at 499.5), the median is <strong>467</strong>, and <strong>52.4%</strong> of endings fall in the lower half <span class="hl-lo">[000–499]</span> versus <strong>47.6%</strong> in the upper half <span class="hl-hi">[500–999]</span> — the opposite direction from the guess, and statistically clear (z ≈ −6.8). The very top decile <span class="hl-hi">[900–999]</span> is actually <strong>under</strong>-represented (6.3%, vs 10% if random). What genuinely dominates isn't "high," it's <strong>round</strong>: endings pile onto 000, multiples of 100/25, repeat-digits (555, 777, 333…), sequential runs (123, 456, 789…), and the meme value 420.</p>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="v" id="t_pred">20,045</div><div class="l">Predictions analyzed</div><div class="h">one per user, per hunt (final value)</div></div>
+    <div class="tile"><div class="v" id="t_users">5,213</div><div class="l">Unique predictors</div><div class="h">distinct accounts across all hunts</div></div>
+    <div class="tile"><div class="v" id="t_hunts">34</div><div class="l">Tracked hunts with predictions</div><div class="h">5 streamers · Bean, Cdew, Hunter, Mitch, Snutzy</div></div>
+    <div class="tile"><div class="v" id="t_mean">480.6</div><div class="l">Mean last-3-digits</div><div class="h">random baseline = 499.5</div></div>
+  </div>
+
+  <h2>Full distribution of ending digits</h2>
+  <p class="lead">Every prediction's last three digits binned into 100 buckets of 10 (000–009, 010–019, … 990–999). The dashed line is where each bar would sit if endings were uniformly random.</p>
+  <div class="figure">
+    <div class="legend">
+      <span class="k"><span class="sw" style="background:var(--series)"></span>Prediction count per bucket</span>
+      <span class="k"><span class="sw" style="background:var(--accent)"></span>000–009 bucket (round thousands)</span>
+      <span class="k"><span class="sw line"></span>Random-uniform expectation (≈200/bucket)</span>
+    </div>
+    <svg id="histMain" viewBox="0 0 960 360" role="img" aria-label="Histogram of last three digits in 100 buckets"></svg>
+    <div class="cap">A truly random process would be flat at the dashed line. Instead the field is spiky — and the tallest spike by far is the 000-end bucket (round thousands), which sits at the <em>bottom</em> of the range, pulling the average down.</div>
+  </div>
+
+  <h2>The high-vs-low test</h2>
+  <p class="lead">Collapsing to 20 buckets of 50 makes the balance between the halves easy to read. If Matthew's hunch held, the right half would tower over the left. It doesn't.</p>
+  <div class="figure">
+    <div class="legend">
+      <span class="k"><span class="sw" style="background:var(--accent)"></span>Lower half — 52.4%</span>
+      <span class="k"><span class="sw" style="background:var(--series)"></span>Upper half — 47.6%</span>
+      <span class="k"><span class="sw line"></span>Uniform expectation</span>
+    </div>
+    <svg id="histCoarse" viewBox="0 0 960 320" role="img" aria-label="Histogram of last three digits in 20 buckets split at the midpoint"></svg>
+    <div class="cap">Buckets left of the midpoint (000–499) hold slightly more mass than those to the right (500–999). The lean is small but real and points the wrong way for the "round-up" theory.</div>
+  </div>
+
+  <h2>What people actually reach for</h2>
+  <p class="lead">The 20 most common endings account for <strong>20.5%</strong> of all predictions — a huge concentration for values that are only 2% of the 000–999 range. They are almost entirely round, repeated-digit, sequential, or meme numbers.</p>
+  <div class="card">
+    <div class="ranked" id="ranked"></div>
+    <div class="cap" style="margin-top:12px">Bar length = share of all predictions. <span style="color:var(--accent)">Orange</span> = round-number ending; blue = repeat-digit, sequential, or meme. The single most common non-round ending is <strong>420</strong>.</div>
+  </div>
+
+  <h2>Rounding is the real behavior</h2>
+  <p class="lead">Each panel shows how often an ending has a given round property, against what you'd expect from random digits. People round hard — just toward tidy numbers, not toward the ceiling.</p>
+  <div class="structure" id="structure"></div>
+
+  <h2>How this was built</h2>
+  <div class="notes">
+    <p class="body">Predictions were pooled from two sources in the tracker's data: the per-hunt live event logs (<code>*_hunt_live_logs/hunt_*/predictions.jsonl</code>) and the closing snapshots (<code>*_pending_prediction_result_history.jsonl</code>). Handling details:</p>
+    <ul>
+      <li>Each user counts <strong>once per hunt</strong> — their final submitted amount. When a user revised their guess, only the latest value (by event timestamp / closing snapshot) is kept.</li>
+      <li>The bot's own automated entries (<code>mine: true</code>) are excluded, so this reflects organic predictors only.</li>
+      <li>Last-3-digits = integer part of the amount, mod 1000 (e.g. 22,<b>543</b> → 543; 16,739.25 → <b>739</b>). Amounts are whole numbers for 90% of entries; fractional values are truncated to the dollar before taking digits.</li>
+      <li>34 hunts had at least one logged prediction (26 appear in both sources, 5 live-only, 3 snapshot-only); a handful of tracked hunts logged only events with no captured predictions and contribute nothing.</li>
+      <li>The distribution's departure from uniform is not subtle: a chi-square goodness-of-fit test against a flat 000–999 distribution gives χ² ≈ 71,400 (df = 999), i.e. essentially p ≈ 0. The endings are wildly non-random — just not in the high-skewing way hypothesized.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Generated from local tracker logs · <span id="genstamp"></span> · Figures are interactive — hover any bar. Toggle light/dark with the button up top.
+  </footer>
+</div>
+
+<div class="tt" id="tt"></div>
+
+<script>
+const DATA = {
+  bins10: [1059,73,101,49,112,79,146,46,55,53,156,367,377,130,139,136,101,79,107,110,160,325,383,385,199,297,132,107,126,105,96,160,390,447,299,252,219,128,138,109,140,133,562,277,379,474,188,159,176,85,258,125,215,174,342,495,423,140,165,102,84,75,160,168,184,343,374,397,160,229,75,166,154,147,166,225,326,333,283,96,128,107,143,108,175,186,150,204,280,222,123,92,87,76,97,119,161,79,180,239],
+  bins50: [1394,379,1169,533,1452,767,1392,846,1491,1082,1114,1325,671,1503,708,1263,661,1042,475,778],
+  top: [{v:0,count:871,pct:4.35,cat:'round'},{v:420,count:337,pct:1.68,cat:'meme'},{v:555,count:285,pct:1.42,cat:'repeat'},{v:333,count:228,pct:1.14,cat:'repeat'},{v:777,count:223,pct:1.11,cat:'repeat'},{v:666,count:210,pct:1.05,cat:'repeat'},{v:444,count:204,pct:1.02,cat:'repeat'},{v:111,count:172,pct:0.86,cat:'repeat'},{v:222,count:169,pct:0.84,cat:'repeat'},{v:500,count:159,pct:0.79,cat:'round'},{v:888,count:152,pct:0.76,cat:'repeat'},{v:123,count:149,pct:0.74,cat:'sequential'},{v:456,count:129,pct:0.64,cat:'sequential'},{v:767,count:126,pct:0.63,cat:'pattern'},{v:567,count:125,pct:0.62,cat:'sequential'},{v:999,count:123,pct:0.61,cat:'repeat'},{v:676,count:114,pct:0.57,cat:'pattern'},{v:789,count:111,pct:0.55,cat:'sequential'},{v:654,count:110,pct:0.55,cat:'sequential'},{v:321,count:103,pct:0.51,cat:'sequential'}],
+  structure: [
+    {name:'Ends in 0', obs:16.1, exp:10, note:'multiple of ten'},
+    {name:'Multiple of 25', obs:11.5, exp:4, note:'…000/025/050/…'},
+    {name:'Ends in 00', obs:7.6, exp:1, note:'multiple of a hundred'},
+    {name:'Repeat-digit (111,222,…999)', obs:8.8, exp:0.9, note:'9 of the 1000 endings'},
+    {name:'Exactly 000 (round thousand)', obs:4.3, exp:0.1, note:'e.g. 20,000 / 100,000'},
+    {name:'Top-20 endings combined', obs:20.5, exp:2, note:'20 of the 1000 endings'}
+  ],
+  n:20045, exp10:200.45, exp50:1002.25, total:20045, users:5213, hunts:34, mean:480.6
+};
+const CAT_LABEL = {round:'round',meme:'meme',repeat:'repeat-digit',sequential:'sequential',pattern:'pattern'};
+
+const NS='http://www.w3.org/2000/svg';
+function el(n,a){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e;}
+const tt=document.getElementById('tt');
+function showTip(html,evt){tt.innerHTML=html;tt.style.opacity=1;moveTip(evt);}
+function moveTip(evt){const p=12;let x=evt.clientX+p,y=evt.clientY+p;
+  const r=tt.getBoundingClientRect();
+  if(x+r.width>window.innerWidth-8)x=evt.clientX-r.width-p;
+  if(y+r.height>window.innerHeight-8)y=evt.clientY-r.height-p;
+  tt.style.left=x+'px';tt.style.top=y+'px';}
+function hideTip(){tt.style.opacity=0;}
+const fmt=n=>n.toLocaleString('en-US');
+const pad3=v=>String(v).padStart(3,'0');
+
+/* ---------- Main 100-bucket histogram ---------- */
+function drawMain(){
+  const svg=document.getElementById('histMain');
+  svg.innerHTML='';
+  const W=960,H=360, mL=48,mR=14,mT=14,mB=42;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  const bins=DATA.bins10, maxV=Math.max(...bins);
+  const yMax=Math.ceil(maxV/200)*200;
+  const x=i=>mL + i*(pw/bins.length);
+  const bw=pw/bins.length;
+  const y=v=>mT+ph - (v/yMax)*ph;
+  // gridlines + y labels
+  for(let g=0;g<=yMax;g+=200){
+    svg.appendChild(el('line',{x1:mL,y1:y(g),x2:mL+pw,y2:y(g),class:'gridline'}));
+    const t=el('text',{x:mL-8,y:y(g)+4,'text-anchor':'end',class:''});t.setAttribute('fill','var(--muted)');t.style.fontSize='11px';t.textContent=fmt(g);svg.appendChild(t);
+  }
+  // bars
+  bins.forEach((v,i)=>{
+    const bh=(v/yMax)*ph;
+    const r=el('rect',{x:x(i)+0.6,y:y(v),width:Math.max(bw-1.2,0.8),height:bh,rx:1.5,
+      class:'bar'+(i===0?' hot':'')});
+    const lo=pad3(i*10), hi=pad3(i*10+9);
+    r.addEventListener('mousemove',e=>showTip(`<b>Endings ${lo}–${hi}</b><br><span class="m">${fmt(v)} predictions · ${(100*v/DATA.n).toFixed(2)}%</span><br><span class="m">expected if random: ${Math.round(DATA.exp10)}</span>`,e));
+    r.addEventListener('mouseleave',hideTip);
+    svg.appendChild(r);
+  });
+  // uniform reference line
+  svg.appendChild(el('line',{x1:mL,y1:y(DATA.exp10),x2:mL+pw,y2:y(DATA.exp10),class:'refline'}));
+  // x ticks every 10 bins
+  for(let i=0;i<=100;i+=10){
+    const xt=mL+i*(pw/bins.length);
+    const lab= i===100?'999':pad3(i*10);
+    const t=el('text',{x:xt,y:mT+ph+18,'text-anchor':'middle'});t.setAttribute('fill','var(--muted)');t.style.fontSize='11px';t.textContent=lab;svg.appendChild(t);
+  }
+  const xtit=el('text',{x:mL+pw/2,y:H-4,'text-anchor':'middle',class:'axis-title'});xtit.textContent='Last three digits of the prediction (000–999)';svg.appendChild(xtit);
+  const ytit=el('text',{x:14,y:mT+ph/2,'text-anchor':'middle',class:'axis-title',transform:`rotate(-90 14 ${mT+ph/2})`});ytit.textContent='Predictions';svg.appendChild(ytit);
+}
+
+/* ---------- Coarse 20-bucket histogram, split at midpoint ---------- */
+function drawCoarse(){
+  const svg=document.getElementById('histCoarse');
+  svg.innerHTML='';
+  const W=960,H=320, mL=52,mR=14,mT=14,mB=52;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  const bins=DATA.bins50, maxV=Math.max(...bins);
+  const yMax=Math.ceil(maxV/500)*500;
+  const bw=pw/bins.length;
+  const x=i=>mL+i*bw;
+  const y=v=>mT+ph-(v/yMax)*ph;
+  // shaded halves
+  svg.appendChild(el('rect',{x:mL,y:mT,width:pw/2,height:ph,fill:'var(--shade-lo)'}));
+  svg.appendChild(el('rect',{x:mL+pw/2,y:mT,width:pw/2,height:ph,fill:'var(--shade-hi)'}));
+  for(let g=0;g<=yMax;g+=500){
+    svg.appendChild(el('line',{x1:mL,y1:y(g),x2:mL+pw,y2:y(g),class:'gridline'}));
+    const t=el('text',{x:mL-8,y:y(g)+4,'text-anchor':'end'});t.setAttribute('fill','var(--muted)');t.style.fontSize='11px';t.textContent=fmt(g);svg.appendChild(t);
+  }
+  bins.forEach((v,i)=>{
+    const lower = i<10;
+    const r=el('rect',{x:x(i)+2,y:y(v),width:bw-4,height:(v/yMax)*ph,rx:3,
+      fill: lower?'var(--accent)':'var(--series)'});
+    const lo=pad3(i*50),hi=pad3(i*50+49);
+    r.addEventListener('mousemove',e=>showTip(`<b>Endings ${lo}–${hi}</b><br><span class="m">${fmt(v)} predictions · ${(100*v/DATA.n).toFixed(2)}%</span><br><span class="m">${lower?'lower half':'upper half'}</span>`,e));
+    r.addEventListener('mouseleave',hideTip);
+    svg.appendChild(r);
+  });
+  svg.appendChild(el('line',{x1:mL,y1:y(DATA.exp50),x2:mL+pw,y2:y(DATA.exp50),class:'refline'}));
+  // midpoint divider
+  svg.appendChild(el('line',{x1:mL+pw/2,y1:mT-2,x2:mL+pw/2,y2:mT+ph,stroke:'var(--baseline)','stroke-width':1.5}));
+  for(let i=0;i<=20;i+=2){
+    const xt=mL+i*bw, lab=i===20?'999':pad3(i*50);
+    const t=el('text',{x:xt,y:mT+ph+18,'text-anchor':'middle'});t.setAttribute('fill','var(--muted)');t.style.fontSize='11px';t.textContent=lab;svg.appendChild(t);
+  }
+  // half labels
+  const l1=el('text',{x:mL+pw*0.25,y:mT+ph+40,'text-anchor':'middle'});l1.setAttribute('fill','var(--accent)');l1.style.fontSize='12.5px';l1.style.fontWeight='650';l1.textContent='LOWER HALF — 52.4%';svg.appendChild(l1);
+  const l2=el('text',{x:mL+pw*0.75,y:mT+ph+40,'text-anchor':'middle'});l2.setAttribute('fill','var(--series)');l2.style.fontSize='12.5px';l2.style.fontWeight='650';l2.textContent='UPPER HALF — 47.6%';svg.appendChild(l2);
+}
+
+/* ---------- Ranked top-20 ---------- */
+function drawRanked(){
+  const box=document.getElementById('ranked');
+  const max=DATA.top[0].pct;
+  DATA.top.forEach(d=>{
+    const row=document.createElement('div');row.className='row';
+    const isRound = d.cat==='round';
+    row.innerHTML=`<div class="num">${pad3(d.v)}</div>
+      <div class="track"><div class="fill ${isRound?'round':'rep'}" style="width:${(d.pct/max*100).toFixed(1)}%"></div></div>
+      <div class="meta">${fmt(d.count)} · <span class="cat">${CAT_LABEL[d.cat]}</span></div>`;
+    box.appendChild(row);
+  });
+}
+
+/* ---------- Rounding structure ---------- */
+function drawStructure(){
+  const box=document.getElementById('structure');
+  const scaleMax=Math.max(...DATA.structure.map(s=>s.obs))*1.1;
+  DATA.structure.forEach(s=>{
+    const c=document.createElement('div');c.className='srow';
+    const ratio=(s.obs/s.exp);
+    c.innerHTML=`<div class="top"><span class="name">${s.name}</span><span class="obs">${s.obs}%</span></div>
+      <div class="exp">random baseline ${s.exp}% · <b>${ratio>=1?ratio.toFixed(1)+'×':''}</b> ${ratio>=1?'more common':''}</div>
+      <div class="minibar"><div class="o" style="width:${(s.obs/scaleMax*100).toFixed(1)}%"></div><div class="e" style="left:${(s.exp/scaleMax*100).toFixed(1)}%"></div></div>`;
+    box.appendChild(c);
+  });
+}
+
+/* ---------- theme ---------- */
+const root=document.documentElement, btn=document.getElementById('themeBtn');
+function currentDark(){const t=root.getAttribute('data-theme');
+  if(t==='dark')return true; if(t==='light')return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;}
+btn.addEventListener('click',()=>{root.setAttribute('data-theme',currentDark()?'light':'dark');});
+
+// stamp
+document.getElementById('genstamp').textContent = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+drawMain();drawCoarse();drawRanked();drawStructure();
+window.addEventListener('resize',()=>{drawMain();drawCoarse();});
+</script>
+</body>
+</html>
